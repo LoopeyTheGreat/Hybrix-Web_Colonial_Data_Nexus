@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colonial Data Nexus - Volume Monitor</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .status-card {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+        .status-card.warning {
+            border-left-color: #FF9800;
+        }
+        .status-card.critical {
+            border-left-color: #f44336;
+        }
+        .volume-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4CAF50;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+        }
+        .metric-label {
+            color: #b0b0b0;
+        }
+        .metric-value {
+            font-weight: bold;
+        }
+        .links {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .links a {
+            color: #4CAF50;
+            text-decoration: none;
+            margin: 0 15px;
+            padding: 10px 20px;
+            border: 1px solid #4CAF50;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .links a:hover {
+            background-color: #4CAF50;
+            color: #1a1a1a;
+        }
+        .refresh-note {
+            text-align: center;
+            color: #888;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(function(){
+            location.reload();
+        }, 30000);
+    </script>
+</head>
+<body>    <div class="header">
+        <h1>🗂️ Colonial Data Nexus</h1>
+        <h2>Silent Background Monitor Dashboard</h2>
+        <p>Monitoring autofs mounts and VLAN connectivity</p>
+    </div>
+      <div class="status-grid">
+        <div class="status-card">
+            <div class="volume-name">🔇 Silent Background Monitoring Active</div>
+            <div class="metric">
+                <span class="metric-label">Monitor Type:</span>
+                <span class="metric-value">Push-based (Uptime Kuma)</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Autofs Mounts:</span>
+                <span class="metric-value">6 locations monitored</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">VLAN Connectivity:</span>
+                <span class="metric-value">VPN + Download VLANs</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Check Interval:</span>
+                <span class="metric-value">Every 5 minutes</span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Last Update:</span>
+                <span class="metric-value" id="timestamp">Loading...</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="links">
+        <a href="/health">Health Check (JSON)</a>
+        <a href="/status">Status (JSON)</a>
+    </div>
+    
+    <div class="refresh-note">
+        This page refreshes automatically every 30 seconds
+    </div>
+    
+    <script>
+        // Set current timestamp
+        document.getElementById('timestamp').textContent = new Date().toLocaleString();
+        
+        // Fetch and display volume status
+        fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.volumes) {
+                    const grid = document.querySelector('.status-grid');
+                    // Clear existing cards except the first one
+                    const firstCard = grid.children[0];
+                    grid.innerHTML = '';
+                    grid.appendChild(firstCard);
+                    
+                    // Add volume cards
+                    data.volumes.forEach(volume => {
+                        const card = document.createElement('div');
+                        card.className = 'status-card';
+                        if (volume.status === 'WARNING') card.className += ' warning';
+                        if (volume.status === 'CRITICAL') card.className += ' critical';
+                        
+                        card.innerHTML = `
+                            <div class="volume-name">${volume.path}</div>
+                            <div class="metric">
+                                <span class="metric-label">Status:</span>
+                                <span class="metric-value">${volume.status}</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Total:</span>
+                                <span class="metric-value">${volume.total}</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Used:</span>
+                                <span class="metric-value">${volume.used} (${volume.used_percent})</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Available:</span>
+                                <span class="metric-value">${volume.available}</span>
+                            </div>
+                        `;
+                        grid.appendChild(card);
+                    });
+                }
+            })
+            .catch(error => {
+                console.log('Status endpoint not ready yet');
+            });
+    </script>
+</body>
+</html>

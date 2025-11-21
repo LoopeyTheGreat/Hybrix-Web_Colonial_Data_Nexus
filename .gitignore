@@ -1,0 +1,73 @@
+# Environment Files
+*.env
+.env
+.env.*
+!.env.example
+
+# Docker Runtime Files
+docker-compose.override.yml
+.dockerignore
+
+# Container Data & Volumes
+data/*
+!data/*.sh
+!data/*.conf
+!data/*.service
+volumes/
+mnt/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# Backup Files
+*.backup
+*.bak
+*.old
+*.backup.*
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.sublime-*
+.project
+.classpath
+.settings/
+
+# Node modules (if any JS tooling)
+node_modules/
+
+# Python cache (if any Python scripts)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Trash & Archive
+_Trash_/
+_obsolete_/
+archive/
+
+# Sensitive Configuration
+daemon.json
+interfaces.backup*
+
+# Test & Debug Files
+test-*.yaml
+debug-*.yaml
+whoami-test*
+test-dns*

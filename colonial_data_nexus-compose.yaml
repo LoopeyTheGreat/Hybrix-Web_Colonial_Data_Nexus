@@ -1,0 +1,59 @@
+# Colonial Data Nexus - VLAN Configuration
+# 
+# Network Setup:
+# - qBittorrent: Binds to VPN VLAN interface (ens5 - 192.168.105.10)
+# - SABnzbd: Binds to Download VLAN interface (ens4 - 192.168.100.10)
+#
+services:
+
+  # qBittorrent Service (binds to VPN VLAN interface)
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent-nexus
+    hostname: qbittorrent-vpn
+    network_mode: host
+    ports:
+      - "192.168.105.10:8081:8081"  # Bind to VPN VLAN IP
+    environment:
+      - TZ=America/Denver
+      - WEBUI_PORT=8081
+      - DOCKER_MODS=ghcr.io/gabe565/linuxserver-mod-vuetorrent|ghcr.io/linuxserver/mods:universal-package-install
+      - INSTALL_PACKAGES=curl wget
+      - PUID=911
+      - PGID=911
+    volumes:
+      - "/mnt/cylon.overlord/Containers/qbittorrent/config:/config"
+      - "/mnt/cylon.overlord/Media/New/qbittorrent:/downloads"
+      - "/mnt/cylon.overlord/Incomplete_Torrents/qbittorrent:/data"
+    stop_grace_period: 20s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-s", "--max-time", "5", "--retry", "3", "--retry-delay", "2", "http://localhost:8081"]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+
+  # SABnzbd Service (binds to Download VLAN interface)
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd-nexus
+    hostname: sabnzbd-download
+    network_mode: host
+    ports:
+      - "192.168.100.10:9020:8080" # Bind to Download VLAN IP
+    volumes:
+      - /mnt/cylon.overlord/Containers/sabnzbd/config:/config
+      - /mnt/cylon.overlord/Containers/sabnzbd/download_me:/download_me
+      - /mnt/cylon.overlord/Containers/sabnzbd/downloads:/downloads
+      - /mnt/cylon.overlord/Media/New:/Overlord_Media/New
+      - /mnt/cylon.overlord/Incomplete_Torrents/sabnzbd:/mnt/partial_downloads
+    environment:
+      - TZ=America/Denver
+    restart: unless-stopped
+
+
+
+
+

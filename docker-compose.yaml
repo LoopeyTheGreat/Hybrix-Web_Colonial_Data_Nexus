@@ -1,0 +1,320 @@
+# Colonial Data Nexus - VLAN Configuration
+# 
+# Network Setup:
+# - qBittorrent: Binds to VPN VLAN interface (ens5 - 192.168.105.10)
+# - SABnzbd: Binds to Download VLAN interface (ens4 - 192.168.100.10)
+# - SABnzbd Proxy: Exposes SABnzbd to main LAN (192.168.50.10:9020) for Sonarr/other services
+#
+services:
+
+  # qBittorrent Service (uses IPvlan L2 mode for direct VLAN IP assignment)
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent-nexus
+    hostname: qbittorrent-vpn
+    networks:
+      vpn_vlan:
+        ipv4_address: 192.168.105.10
+    dns:
+      - "1.1.1.1"
+      - "9.9.9.9"
+      - "1.0.0.1"
+    dns_search: []
+    dns_opt:
+      - "ndots:0"
+    environment:
+      - TZ=America/Denver
+      - WEBUI_PORT=8081
+      - PUID=911
+      - PGID=911
+      - QBT_WEBUI_HOST=*  # Bind to all interfaces internally
+      - QBT_WEBUI_PORT=8081
+      - QBT_LEGAL_NOTICE=confirm
+    volumes:
+      - "/mnt/cylon.overlord/Containers/qbittorrent/config:/config"  # Use local config directory
+      - "/mnt/cylon.overlord/Media/New:/Overlord_Media/New"  # Use local media directory
+      - "/mnt/cylon.overlord/Incomplete_Torrents/qbittorrent:/data"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.25'        # Allow up to 3.5 CPU cores for heavy torrent load
+          memory: 4G         # 4GB RAM limit for large torrent queues and metadata
+        reservations:
+          cpus: '.75'        # Reserve 0.75 CPU cores for consistent performance
+          memory: 768M       # Reserve 768MB RAM for baseline operations
+    stop_grace_period: 20s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-s", "--max-time", "5", "--retry", "3", "--retry-delay", "2", "http://localhost:8081"]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+
+  # SABnzbd Service (uses download VLAN for all traffic)
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd-nexus
+    hostname: sabnzbd-download
+    networks:
+      download_vlan:
+        ipv4_address: 192.168.100.10
+    dns:
+      - "1.1.1.1"
+      - "9.9.9.9"
+      - "1.0.0.1"
+    dns_search: []
+    dns_opt:
+      - "ndots:0"
+    volumes:
+      - "/mnt/cylon.overlord/Containers/sabnzbd/config:/config" 
+      - "/mnt/cylon.overlord/Containers/sabnzbd/download_me:/download_me"  
+      - "/mnt/cylon.overlord/Media/New:/Overlord_Media/New"  
+      - "/mnt/cylon.overlord/Incomplete_Torrents/sabnzbd:/mnt/partial_downloads"
+    environment:
+      - TZ=America/Denver
+      - PUID=911
+      - PGID=911
+      - CHERRYPY_REQUEST_TIMEOUT=600
+      - CHERRYPY_SOCKET_TIMEOUT=600
+      - CHERRYPY_MAX_REQUEST_BODY_SIZE=4294967296
+      - CHERRYPY_SHUTDOWN_TIMEOUT=60
+      - SOCKET_TIMEOUT=600
+      - SABNZBD_HOST=0.0.0.0
+      - SABNZBD_PORT=8080
+      - PYTHON_DONT_WRITE_BYTECODE=1
+      - PYTHONUNBUFFERED=1
+    ulimits:
+      nofile:
+        soft: 65536
+
+
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          cpus: '2.5'        # Allow up to 2.5 CPU cores for NZB processing
+          memory: 4G         # 4GB RAM limit for decompression and processing
+        reservations:
+          cpus: '0.25'       # Reserve 0.75 CPU cores for consistent performance
+          memory: 512M       # Reserve 512MB RAM for baseline operations
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api?mode=version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Nginx Proxy for SABnzbd access from main LAN
+  sabnzbd-proxy:
+    image: nginx:alpine
+    container_name: sabnzbd-proxy-nexus
+    hostname: sabnzbd-proxy-lan
+    networks:
+      - default  # Connect to default bridge network for port exposure
+      - download_vlan  # Connect to download VLAN to reach SABnzbd
+    ports:
+      - "192.168.50.10:9020:9020"   # Expose on main LAN for Sonarr/other services
+    volumes:
+      - "/mnt/cylon.overlord/Containers/sabnzbd-proxy/nginx.conf:/etc/nginx/nginx.conf:ro"
+    depends_on:
+      - sabnzbd
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9020/api?mode=version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Nginx Proxy for Prowlarr access from main LAN
+  prowlarr-proxy:
+    image: nginx:alpine
+    container_name: prowlarr-proxy-nexus
+    hostname: prowlarr-proxy-lan
+    networks:
+      - default  # Connect to default bridge network for port exposure
+      - vpn_vlan  # Connect to VPN VLAN to reach Prowlarr
+    ports:
+      - "192.168.50.10:9696:9696"   # Expose on main LAN for Sonarr/Radarr/other services
+    volumes:
+      - "/mnt/cylon.overlord/Containers/prowlarr-proxy/nginx.conf:/etc/nginx/nginx.conf:ro"
+    depends_on:
+      - prowlarr
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9696/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # - prowlarr - #
+  prowlarr:
+  
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr-nexus
+    hostname: prowlarr-vpn
+    networks:
+      vpn_vlan:
+        ipv4_address: 192.168.105.9
+    dns:
+      - "1.1.1.1"
+      - "9.9.9.9"
+      - "1.0.0.1"
+    dns_search: []
+    dns_opt:
+      - "ndots:0"
+    environment:
+      - TZ=America/Denver
+      - PUID=911
+      - PGID=911
+      # - PROWLARR_DB_TYPE=mariadb
+      # - PROWLARR_DB_HOST=192.168.50.40
+      # - PROWLARR_DB_PORT=3302
+      # - PROWLARR_DB_NAME=${PROWLARR_DB_NAME}
+      # - PROWLARR_DB_USER=${PROWLARR_DB_USER}
+      # - PROWLARR_DB_PASS=${PROWLARR_DB_PASS}
+    volumes:
+      - /mnt/cylon.overlord/Containers/prowlarr/config:/config
+      - /mnt/cylon.overlord/Media:/Overlord_Media
+      - /mnt/cylon.raider/drive1/media:/Raider_Drive1
+      - /mnt/cylon.raider/drive2/media:/Raider_Drive2
+      - /mnt/cylon.raider/drive3/media:/Raider_Drive3
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'        # Allow up to 2 CPU cores for concurrent tracker searches
+          memory: 2G       # 1.5GB RAM limit for indexer operations and caching
+        reservations:
+          cpus: '.75'       # Reserve 0.75 CPU cores for consistent performance
+          memory: 512M       # Reserve 512MB RAM for baseline operations
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9696/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # - Flaresolverr - #
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr-nexus
+    hostname: flaresolverr-vpn
+    networks:
+      vpn_vlan:
+        ipv4_address: 192.168.105.12
+    dns:
+      - "1.1.1.1"
+      - "9.9.9.9"
+      - "1.0.0.1"
+    dns_search: []
+    dns_opt:
+      - "ndots:0"
+    environment:
+      - TZ=America/Denver
+      - LOG_LEVEL=info
+      - PORT=8191
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8191/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+
+  # # - Firefox - #
+  # firefox:
+  #   image: jlesage/firefox:latest
+  #   container_name: firefox-nexus
+  #   hostname: firefox-vpn
+  #   networks:
+  #     vpn_vlan:
+  #       ipv4_address: 192.168.105.13
+  #   dns:
+  #     - "1.1.1.1"
+  #     - "9.9.9.9"
+  #     - "1.0.0.1"
+  #   dns_search: []
+  #   dns_opt:
+  #     - "ndots:0"
+  #   environment:
+  #     - TZ=America/Denver
+  #   volumes:
+  #     - "/mnt/cylon.overlord/Containers/firefox.p/config:/config:rw"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '2.0'        # Allow up to 2 CPU cores
+  #         memory: 2G         # 2GB RAM limit
+  #       reservations:
+  #         cpus: '0.25'       # Reserve 0.25 CPU cores
+  #         memory: 128M       # Reserve 128MB RAM
+  #   restart: unless-stopped
+
+  # # - jackett - #
+  # jackett:
+  #   image: linuxserver/jackett:latest
+  #   container_name: jackett-nexus
+  #   hostname: jackett-vpn
+  #   networks:
+  #     vpn_vlan:
+  #       ipv4_address: 192.168.105.14
+  #   dns:
+  #     - "1.1.1.1"
+  #     - "9.9.9.9"
+  #     - "1.0.0.1"
+  #   dns_search: []
+  #   dns_opt:
+  #     - "ndots:0"
+  #   environment:
+  #     - TZ=US/Mountain
+  #     - PUID=911
+  #     - PGID=911
+  #   volumes:
+  #     - /mnt/cylon.overlord/Containers/jackett/config:/config
+  #     - /mnt/cylon.overlord/Media:/Overlord_Media
+  #     - /mnt/cylon.raider/drive1/media:/Raider_Drive1
+  #     - /mnt/cylon.raider/drive2/media:/Raider_Drive2
+  #     - /mnt/cylon.raider/drive3/media:/Raider_Drive3
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://127.0.0.1:9117/"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
+
+
+
+
+# Network definitions
+networks:
+  vpn_vlan:
+    driver: ipvlan
+    driver_opts:
+      parent: enp6s0  # Bind directly to VPN VLAN interface
+      ipvlan_mode: l2
+    ipam:
+      config:
+        - subnet: 192.168.105.0/24
+          gateway: 192.168.105.1
+  
+  download_vlan:
+    driver: ipvlan
+    driver_opts:
+      parent: enp4s0  # Bind directly to Download VLAN interface
+      ipvlan_mode: l2
+    ipam:
+      config:
+        - subnet: 192.168.100.0/24
+          gateway: 192.168.100.1
+
+
+
+
+

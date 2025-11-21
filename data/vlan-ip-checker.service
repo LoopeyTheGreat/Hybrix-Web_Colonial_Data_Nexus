@@ -1,0 +1,24 @@
+[Unit]
+Description=VLAN IP Checker for Colonial Data Nexus
+Documentation=VLAN IP monitoring for VPN verification
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/mnt/cylon.overlord/Containers/colonial_data_nexus/data/host_ip_checker.sh --loop
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target
